@@ -110,20 +110,22 @@ def search_web(query: str, max_results: int = 10) -> str:
     formatted_results = []
     
     # --- STRATEGY 1: DuckDuckGo ---
-    print("🔎 DEBUG: Using DuckDuckGo (DDGS)...")
+    print(f"🔎 DEBUG: Using DuckDuckGo (DDGS) for query: {search_query}")
     try:
         from duckduckgo_search import DDGS
-        # Use a simpler call that is more robust in latest versions
+        # Use a more stable configuration for Cloud environments
         with DDGS() as ddgs:
-            results = list(ddgs.text(search_query, max_results=5))
-            if results:
-                ddg_raw_results = results
-            else:
-                # Try fallback without the 'autism' keyword
-                ddg_raw_results = list(ddgs.text(clean_query, max_results=5))
+            # text() returns a generator in newer versions, convert to list
+            ddg_gen = ddgs.text(search_query, max_results=5)
+            ddg_raw_results = [r for r in ddg_gen]
+            
+            if not ddg_raw_results:
+                print("🔎 DEBUG: DDG returned empty results, trying without 'autism' keyword...")
+                ddg_gen = ddgs.text(clean_query, max_results=5)
+                ddg_raw_results = [r for r in ddg_gen]
 
     except Exception as e:
-        print(f"🔎 DEBUG: DuckDuckGo failed: {e}")
+        print(f"🔎 DEBUG: DuckDuckGo failed with error: {str(e)}")
         ddg_raw_results = []
 
     if ddg_raw_results:
@@ -150,7 +152,9 @@ def search_web(query: str, max_results: int = 10) -> str:
                 )
             return "\n\n".join(formatted_results)
     except Exception as e:
-        print(f"🔎 DEBUG: Google fallback failed: {e}")
+        print(f"🔎 DEBUG: Google fallback failed: {str(e)}")
+        # If both fail, return a helpful message for the LLM
+        return "Search failed due to connectivity issues. Please rely on your internal knowledge."
 
     return "No relevant search results found."
 

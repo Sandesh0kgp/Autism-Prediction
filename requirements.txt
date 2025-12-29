@@ -1,10 +1,10 @@
 streamlit
 pandas
 numpy
-scikit-learn>=1.6.0
+scikit-learn==1.6.1
 xgboost
 groq>=0.4.0
-duckduckgo_search>=6.0.0
+duckduckgo-search==6.3.0
 googlesearch-python
 python-dotenv
 imbalanced-learn
