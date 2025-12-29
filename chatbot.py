@@ -110,16 +110,17 @@ def search_web(query: str, max_results: int = 10) -> str:
     formatted_results = []
     
     # --- STRATEGY 1: DuckDuckGo ---
-    print("🔎 DEBUG: Using DuckDuckGo...")
+    print("🔎 DEBUG: Using DuckDuckGo (DDGS)...")
     try:
         from duckduckgo_search import DDGS
+        # Use a simpler call that is more robust in latest versions
         with DDGS() as ddgs:
-            # Try a broader search first
-            ddg_raw_results = list(ddgs.text(search_query, max_results=max_results))
-            
-            if not ddg_raw_results:
-                # Try again with a slightly different query if no results
-                ddg_raw_results = list(ddgs.text(clean_query, max_results=max_results))
+            results = list(ddgs.text(search_query, max_results=5))
+            if results:
+                ddg_raw_results = results
+            else:
+                # Try fallback without the 'autism' keyword
+                ddg_raw_results = list(ddgs.text(clean_query, max_results=5))
 
     except Exception as e:
         print(f"🔎 DEBUG: DuckDuckGo failed: {e}")
@@ -167,7 +168,7 @@ def get_response(user_question: str, context: str, use_search: bool = True) -> T
             )
         
         # Trigger search for almost any question
-        triggers = ['who', 'what', 'where', 'when', 'why', 'how', 'explain', 'tell', 'latest', 'current', 'news', 'research', 'treatment', 'study', 'development']
+        triggers = ['who', 'what', 'where', 'when', 'why', 'how', 'explain', 'tell', 'latest', 'current', 'news', 'research', 'treatment', 'study', 'development', 'treatments', 'finding', 'cause']
         needs_search = use_search and any(trigger in user_question.lower() for trigger in triggers)
         
         # System message
