@@ -28,7 +28,7 @@ wheels/
 *.db
 
 # ML Models
-*.pkl
+# *.pkl  <-- Removed to allow model files for deployment
 *.h5
 *.joblib
 
