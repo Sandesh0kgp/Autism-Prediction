@@ -7,8 +7,7 @@ import os
 from typing import Dict, List, Optional, Tuple
 from dotenv import load_dotenv
 from groq import Groq
-from duckduckgo_search import DDGS
-from googlesearch import search as google_search
+from openai import OpenAI
 import re
 
 # Load environment variables
@@ -81,82 +80,68 @@ def build_context(user_profile: Dict, latest_prediction: Optional[Dict],
     return "\n".join(context_parts)
 
 
-def calculate_relevance(query: str, text: str) -> bool:
-    """Check if result text contains relevant keywords."""
-    text_lower = text.lower()
-    query_lower = query.lower()
-    
-    # 1. Critical Filter: If query focuses on 'autism', result MUST mention it.
-    if 'autism' in query_lower or 'asd' in query_lower:
-        if 'autism' not in text_lower and 'asd' not in text_lower and 'spectrum' not in text_lower:
-            return False
-
-    # 2. Relaxed Filter
-    return True
-
-
-def search_web(query: str, max_results: int = 10) -> str:
-    """Search the web with improved reliability."""
+def search_web_with_perplexity(query: str) -> str:
+    """
+    Search the web using Perplexity AI API.
+    Perplexity is an LLM with built-in web search that returns cited answers.
+    """
     clean_query = query.replace('"', '').replace("'", "")
     
-    # Add "autism" to query if not present to ensure results are relevant
+    # Add "autism" context if not present
     if 'autism' not in clean_query.lower() and 'asd' not in clean_query.lower():
-        search_query = f"{clean_query} autism"
+        search_query = f"{clean_query} related to autism"
     else:
         search_query = clean_query
 
-    print(f"🔎 DEBUG: Attempting to search web for: '{search_query}'")
+    print(f"🔎 DEBUG: Using Perplexity AI to search for: '{search_query}'")
     
-    formatted_results = []
-    
-    # --- STRATEGY 1: DuckDuckGo ---
-    print(f"🔎 DEBUG: Using DuckDuckGo (DDGS) for query: {search_query}")
     try:
-        from duckduckgo_search import DDGS
-        # Use a more stable configuration for Cloud environments
-        with DDGS() as ddgs:
-            # text() returns a generator in newer versions, convert to list
-            ddg_gen = ddgs.text(search_query, max_results=5)
-            ddg_raw_results = [r for r in ddg_gen]
-            
-            if not ddg_raw_results:
-                print("🔎 DEBUG: DDG returned empty results, trying without 'autism' keyword...")
-                ddg_gen = ddgs.text(clean_query, max_results=5)
-                ddg_raw_results = [r for r in ddg_gen]
-
-    except Exception as e:
-        print(f"🔎 DEBUG: DuckDuckGo failed with error: {str(e)}")
-        ddg_raw_results = []
-
-    if ddg_raw_results:
-        print(f"🔎 DEBUG: Found {len(ddg_raw_results)} results via DDG. Formatting...")
-        for i, res in enumerate(ddg_raw_results[:5], 1):
-            title = res.get('title', 'No Title')
-            body = res.get('body', 'No Description')
-            url = res.get('href') or res.get('url', 'No Link')
-            formatted_results.append(f"{i}. {title}\n   {body}\n   Source: {url}")
+        # Get Perplexity API key
+        perplexity_key = os.getenv('PERPLEXITY_API_KEY')
         
-        if formatted_results:
-            return "\n\n".join(formatted_results)
-
-    # --- STRATEGY 2: Google Fallback ---
-    print("🔎 DEBUG: DDG failed or yielded no results. Trying Google...")
-    try:
-        from googlesearch import search as google_search
-        g_results = list(google_search(search_query, num_results=5, advanced=True, lang="en"))
+        # Try Streamlit secrets if env var not found
+        if not perplexity_key:
+            try:
+                import streamlit as st
+                perplexity_key = st.secrets.get("PERPLEXITY_API_KEY")
+            except (ImportError, FileNotFoundError, KeyError):
+                pass
         
-        if g_results:
-            for i, result in enumerate(g_results, 1):
-                formatted_results.append(
-                    f"{i}. {result.title}\n   {result.description}\n   Source: {result.url}"
-                )
-            return "\n\n".join(formatted_results)
+        if not perplexity_key:
+            print("⚠️ DEBUG: Perplexity API key not found")
+            return "Search unavailable: API key not configured."
+        
+        # Initialize Perplexity client (uses OpenAI SDK with custom base URL)
+        client = OpenAI(
+            api_key=perplexity_key,
+            base_url="https://api.perplexity.ai"
+        )
+        
+        # Call Perplexity with search-enabled model
+        response = client.chat.completions.create(
+            model="sonar",  # Updated model name for web search
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are a helpful research assistant. Provide concise, factual information with citations."
+                },
+                {
+                    "role": "user",
+                    "content": search_query
+                }
+            ],
+            max_tokens=500,
+            temperature=0.2
+        )
+        
+        result = response.choices[0].message.content
+        print(f"✅ DEBUG: Perplexity search successful, got {len(result)} chars")
+        
+        return f"Web Search Results (via Perplexity AI):\n\n{result}"
+        
     except Exception as e:
-        print(f"🔎 DEBUG: Google fallback failed: {str(e)}")
-        # If both fail, return a helpful message for the LLM
-        return "Search failed due to connectivity issues. Please rely on your internal knowledge."
-
-    return "No relevant search results found."
+        print(f"❌ DEBUG: Perplexity search failed: {str(e)}")
+        return "Search failed. Please rely on internal knowledge."
 
 
 def get_response(user_question: str, context: str, use_search: bool = True) -> Tuple[str, Optional[str]]:
@@ -178,12 +163,12 @@ def get_response(user_question: str, context: str, use_search: bool = True) -> T
         # System message
         system_message = (
             "You are a helpful assistant for an autism screening application. "
-            "You have access to real-time web search results provided in the context. "
+            "You have access to web-enhanced information via Perplexity AI provided in the context. "
             "\n\nSEARCH RULES:"
-            "\n1. If 'Web Search Results' contains valid information, YOU MUST USE IT to answer."
-            "\n2. ALWAYS cite the sources from the results (e.g., 'According to...')."
-            "\n3. If 'Web Search Results' says 'No relevant search results found', "
-            "fallback to your internal training knowledge but state: 'My web search didn't find specific results, but I can tell you that...'."
+            "\n1. If 'Web Search Results' contains information from Perplexity AI, USE IT to enhance your answer."
+            "\n2. Perplexity results already include citations, so integrate them naturally into your response."
+            "\n3. If search results are unavailable or failed, use your internal knowledge and state: "
+            "'My search didn't find current results, but based on my training...'."
             "\n\nGENERAL RULES:"
             "\n- Provide clear, empathetic responses."
             "\n- For medical topics, remind users to consult healthcare professionals."
@@ -195,15 +180,15 @@ def get_response(user_question: str, context: str, use_search: bool = True) -> T
             user_message_parts.append(f"User Context:\n{context}\n")
         
         if needs_search:
-            print(f"🔎 DEBUG: Triggering search for: {user_question}")
-            search_results_text = search_web(user_question)
+            print(f"🔎 DEBUG: Triggering Perplexity search for: {user_question}")
+            search_results_text = search_web_with_perplexity(user_question)
             
-            if "No relevant search results found" in search_results_text:
+            if "Search failed" in search_results_text or "Search unavailable" in search_results_text:
                  search_results = None
-                 user_message_parts.append(f"Web Search Status: Search attempted but found no relevant information.\n")
+                 user_message_parts.append(f"Web Search Status: Search attempted but was unavailable.\n")
             else:
                  search_results = search_results_text
-                 user_message_parts.append(f"Web Search Results:\n{search_results}\n")
+                 user_message_parts.append(f"{search_results}\n")
         else:
             print("🔎 DEBUG: Search skipped (no keyword trigger)")
         

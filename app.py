@@ -309,11 +309,11 @@ def page_chatbot():
                     response, sources = chatbot.get_response(prompt, context, use_search=True)
                     st.write(response)
                     
-                    # Show sources if any (Confirmation that DuckDuckGo works!)
+                    # Show sources if any (Web-enhanced via Perplexity AI)
                     if sources:
-                        with st.expander("📚 View Search Sources (DuckDuckGo Results)"):
-                            st.info("The chatbot used these search results:")
-                            st.text(sources)
+                        with st.expander("📚 View Web-Enhanced Information (Perplexity AI)"):
+                            st.info("The chatbot used web search to enhance this response:")
+                            st.markdown(sources)
                     
                     # Save interaction to database
                     db.save_chat(st.session_state.user_id, prompt, response)
