@@ -96,82 +96,61 @@ def calculate_relevance(query: str, text: str) -> bool:
 
 
 def search_web(query: str, max_results: int = 10) -> str:
-    """Search the web with News backend support and Google Fallback."""
+    """Search the web with improved reliability."""
     clean_query = query.replace('"', '').replace("'", "")
     
-    print(f"🔎 DEBUG: Attempting to search web for: '{clean_query}'")
+    # Add "autism" to query if not present to ensure results are relevant
+    if 'autism' not in clean_query.lower() and 'asd' not in clean_query.lower():
+        search_query = f"{clean_query} autism"
+    else:
+        search_query = clean_query
+
+    print(f"🔎 DEBUG: Attempting to search web for: '{search_query}'")
     
     formatted_results = []
     
-    # Check if this is a "News" query
-    is_news = any(w in clean_query.lower() for w in ['latest', 'news', 'recent', 'today', 'update', 'current'])
-    
     # --- STRATEGY 1: DuckDuckGo ---
     print("🔎 DEBUG: Using DuckDuckGo...")
-    ddg_raw_results = []
     try:
-        ddgs = DDGS()
-        
-        if is_news:
-             # Try News First
-             try:
-                 print("🔎 DEBUG: Using DDG News backend...")
-                 ddg_raw_results = list(ddgs.news(clean_query, max_results=max_results))
-             except Exception:
-                 print("🔎 DEBUG: DDG News failed, falling back to Text...")
-                 ddg_raw_results = list(ddgs.text(clean_query, max_results=max_results))
-        else:
-             # Standard Text Search
-             try:
-                 ddg_raw_results = list(ddgs.text(clean_query, max_results=max_results, region='wt-wt'))
-             except Exception:
-                 print("🔎 DEBUG: DDG Default failed, trying Lite...")
-                 ddg_raw_results = list(ddgs.text(clean_query, max_results=max_results, backend='lite'))
+        from duckduckgo_search import DDGS
+        with DDGS() as ddgs:
+            # Try a broader search first
+            ddg_raw_results = list(ddgs.text(search_query, max_results=max_results))
             
+            if not ddg_raw_results:
+                # Try again with a slightly different query if no results
+                ddg_raw_results = list(ddgs.text(clean_query, max_results=max_results))
+
     except Exception as e:
         print(f"🔎 DEBUG: DuckDuckGo failed: {e}")
+        ddg_raw_results = []
 
-    # Start filtering DDG results
-    valid_results = []
     if ddg_raw_results:
-        print(f"🔎 DEBUG: Found {len(ddg_raw_results)} results via DuckDuckGo. Filtering...")
-        for res in ddg_raw_results:
-            title = res.get('title', '')
-            body = res.get('body', '') if 'body' in res else res.get('date', '') 
-            
-            # Check relevance
-            if calculate_relevance(clean_query, title) or calculate_relevance(clean_query, body):
-                 valid_results.append(res)
-            else:
-                 print(f"   🗑️ Discarded irrelevant: {title[:30]}...")
-    
-    if valid_results:
-        print(f"🔎 DEBUG: Kept {len(valid_results)} RELEVANT DDG results.")
-        for i, result in enumerate(valid_results[:5], 1): 
-            formatted_results.append(
-                f"{i}. {result.get('title')}\n   {result.get('body')}\n   Source: {result.get('href') or result.get('url')}"
-            )
-        return "\n\n".join(formatted_results)
+        print(f"🔎 DEBUG: Found {len(ddg_raw_results)} results via DDG. Formatting...")
+        for i, res in enumerate(ddg_raw_results[:5], 1):
+            title = res.get('title', 'No Title')
+            body = res.get('body', 'No Description')
+            url = res.get('href') or res.get('url', 'No Link')
+            formatted_results.append(f"{i}. {title}\n   {body}\n   Source: {url}")
+        
+        if formatted_results:
+            return "\n\n".join(formatted_results)
 
     # --- STRATEGY 2: Google Fallback ---
-    print("🔎 DEBUG: DDG yielded no relevant results. Switching to Google Search Fallback...")
+    print("🔎 DEBUG: DDG failed or yielded no results. Trying Google...")
     try:
-        g_results = list(google_search(clean_query, num_results=5, advanced=True, lang="en"))
+        from googlesearch import search as google_search
+        g_results = list(google_search(search_query, num_results=5, advanced=True, lang="en"))
         
         if g_results:
-            print(f"🔎 DEBUG: Found {len(g_results)} results via Google")
             for i, result in enumerate(g_results, 1):
                 formatted_results.append(
                     f"{i}. {result.title}\n   {result.description}\n   Source: {result.url}"
                 )
             return "\n\n".join(formatted_results)
-        else:
-            print("🔎 DEBUG: Google search yielded 0 results.")
-            
     except Exception as e:
-        print(f"🔎 DEBUG: Google search failed: {e}")
-            
-    print("❌ DEBUG: All search methods failed or found no relevant info.")
+        print(f"🔎 DEBUG: Google fallback failed: {e}")
+
     return "No relevant search results found."
 
 
@@ -188,7 +167,7 @@ def get_response(user_question: str, context: str, use_search: bool = True) -> T
             )
         
         # Trigger search for almost any question
-        triggers = ['who', 'what', 'where', 'when', 'why', 'how', 'explain', 'tell', 'latest', 'current', 'news']
+        triggers = ['who', 'what', 'where', 'when', 'why', 'how', 'explain', 'tell', 'latest', 'current', 'news', 'research', 'treatment', 'study', 'development']
         needs_search = use_search and any(trigger in user_question.lower() for trigger in triggers)
         
         # System message
